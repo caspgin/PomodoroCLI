@@ -1,0 +1,7 @@
+{
+    "profiles": {
+        "PomodoroCLI": {
+            "commandName": "Project"
+        }
+    }
+}
