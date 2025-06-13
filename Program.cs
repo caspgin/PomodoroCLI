@@ -5,9 +5,27 @@ using Timer = System.Timers.Timer;
 
 class PomodoroItem
 {
-    public required string SessionName { get; set; } 
+    public enum StatusName
+    {
+        COMPLETED,
+        IN_PROGRESS,
+        PENDING
+    }
+    public string SessionName { get; set; } 
     public int NumberOfSessions { get; set; }
     public int TimePerSession { get; set; }
+    
+    public StatusName Status{ get; set; }
+    public int CompletedSessions { get; set; }
+    
+    public PomodoroItem(string sessionName, int timePerSession, int numberOfSessions = 1)
+    {
+        SessionName = sessionName;
+        TimePerSession = timePerSession;
+        NumberOfSessions = numberOfSessions;
+        Status = StatusName.PENDING;
+        CompletedSessions = 0;
+    }
 }
 
 class Commands
@@ -23,7 +41,14 @@ class Program
         BREAK,
         POMODORO,
     }
-    const int DefaultSessionTime = 30 * 60;
+
+    enum TimerStatus
+    {
+        RUNNING,
+        PAUSED,
+        FINISHED,
+    }
+    const int DefaultSessionTime = 25 * 60;
     const int DefaultBreakTime = 5 * 60;
     const int DefaultMessageTime = 20;
     private static int _sessionTime;
@@ -38,6 +63,9 @@ class Program
     static List<PomodoroItem> _pomodoroList = new List<PomodoroItem>();
     private static string _message = "";
     private static int _messageTimeLimit = DefaultMessageTime;
+    private static bool _showCompletedSessions = false;
+    private static TimerStatus _timerStatus;
+    private static int _lastCommandIndex = _commandHistory.Count; 
     static void ClearFromCursorToEnd()
     {
         int left = Console.CursorLeft;
@@ -92,18 +120,52 @@ class Program
     {
         AnsiConsole.Markup("[bold yellow]Queue:[/]");
         ClearLineRight();
-        if (_pomodoroList.Count == 0)
-        {
-            AnsiConsole.Markup("No items in queue");
-            ClearLineRight();
-        }
         int i = 1;
+        
         foreach (PomodoroItem item in _pomodoroList)
         {
-            AnsiConsole.MarkupInterpolated($@"[bold]{i}.[/] {item.SessionName} : {item.NumberOfSessions} x {item.TimePerSession / 60} min");
+            if (item.Status == PomodoroItem.StatusName.COMPLETED)
+            {
+                continue;
+            }
+
+            AnsiConsole.MarkupInterpolated($@"[bold]{i}.[/] {item.SessionName}        {item.CompletedSessions}/{item.NumberOfSessions} x {item.TimePerSession / 60} min  {item.Status.ToString().ToLower()}");
             ClearLineRight();
             i++;
         }
+
+        if (i == 1)
+        {
+            AnsiConsole.Markup("No PENDING sessions in the Queue");
+            ClearLineRight();
+        }
+        AnsiConsole.Markup($"[bold yellow]Completed Sessions:[/] [italic]use command 'completed' to see[/]");
+        ClearLineRight();
+        if (_showCompletedSessions)
+        {
+            if (_pomodoroList.Count == 0)
+            {
+                AnsiConsole.Markup("No Completed Sessions");
+                ClearLineRight();
+            }
+            else
+            {
+                i = 1;
+                foreach (PomodoroItem item in _pomodoroList)
+                {
+                    if (item.Status != PomodoroItem.StatusName.COMPLETED)
+                    {
+                        continue;
+                    }
+
+                    AnsiConsole.MarkupInterpolated(
+                        $@"[bold]{i}.[/] {item.SessionName}        {item.CompletedSessions}/{item.NumberOfSessions} x {item.TimePerSession / 60} min");
+                    ClearLineRight();
+                    i++;
+                }
+            }
+        }
+
         ClearLineRight();
         ClearLineRight();
     }
@@ -118,11 +180,7 @@ class Program
     static void DrawCommands(){
         AnsiConsole.Markup("[bold yellow]Commands:[/]");
         ClearLineRight();
-        foreach (Commands command in _commandHistory)
-        {
-            Console.Write(">" + command.Name);
-            ClearLineRight();
-        }
+        
         Console.Write(">");
     }
 
@@ -151,38 +209,85 @@ class Program
         };
         _messageTimer.Start();
     }
+
+    static void CompleteCurrentInQueue()
+    {
+        
+        foreach (var item in _pomodoroList)
+        {
+            if (item.Status == PomodoroItem.StatusName.IN_PROGRESS)
+            {
+                item.CompletedSessions++;
+                if (item.CompletedSessions == item.NumberOfSessions)
+                {
+                    item.Status = PomodoroItem.StatusName.COMPLETED;
+                }
+                break;
+            }
+        }
+    }
+    //Sets the session as current 
+    static void SetNextInQueue()
+    {
+        foreach (var pomodoroItem in _pomodoroList)
+        {
+            if (pomodoroItem.Status == PomodoroItem.StatusName.PENDING)
+            {
+                _currentTime = pomodoroItem.TimePerSession;
+                pomodoroItem.Status = PomodoroItem.StatusName.IN_PROGRESS;
+                break;
+            }
+        }
+    }
+    
     static void TimerInit(int timerTime, int breakTime)
     {
         _timer = new Timer(1000);
         _sessionTime = timerTime != 0 ? timerTime : DefaultSessionTime;
         _breakTime = breakTime != 0 ? breakTime : DefaultBreakTime;
         _currentTime = _sessionTime;
+        _timerStatus = TimerStatus.FINISHED;
         _timer.AutoReset = true;
         _timer.Elapsed += async (sender, args) =>
         {
             _currentTime--;
             if (_currentTime <  0)
             {
+                //stop Timer and Make Notification
                 _timer.Stop();
-                _currentTime = 0; 
-                //Better sounds and UI notification
+                _timerStatus = TimerStatus.FINISHED;
+                _currentTime = 0;
+                //TODO : Better sounds and UI notification
                 Console.Beep();
                 
-                await Task.Delay(5000);
-                
-                _currentTime = _activityName == ActivityName.SESSION ? _breakTime : _sessionTime;
+                // complete Current Session in Queue
+                if (_activityName == ActivityName.SESSION)
+                {
+                    CompleteCurrentInQueue();
+                }
+               
+                //Change Activity
                 _activityName = _activityName == ActivityName.SESSION ? ActivityName.BREAK : ActivityName.SESSION;
                 
-                //Next in Queue
-                //Set the timer to the next activity
-                //Update name of activity
-                //update the queue
+                //Wait for 3 seconds before starting the next session
+                await Task.Delay(3000);
+                
+
+                _currentTime = _activityName == ActivityName.SESSION ? _sessionTime : _breakTime;
+                if (_activityName == ActivityName.SESSION)
+                {
+                    SetNextInQueue();
+                }
+                 
+                
                 _timer.Start();
+                _timerStatus = TimerStatus.RUNNING;
             }
         };
         if (timerTime != 0)
         {
             _timer.Start();
+            _timerStatus = TimerStatus.RUNNING;
         }
     }
 
@@ -201,6 +306,9 @@ class Program
     {
         Console.Clear();
         CursorToHome();
+        _timer.Dispose();
+        _messageTimer.Dispose();
+        // TODO: UPDATE JSON FILE
     }
     static void ProcessCommand(string command)
     {
@@ -213,9 +321,13 @@ class Program
                 break;
             case "stop":
                 _timer.Stop();
+                _timerStatus = TimerStatus.PAUSED;
                 break;
             case "start":
+                if(_timerStatus == TimerStatus.FINISHED)
+                { SetNextInQueue(); }
                 _timer.Start();
+                _timerStatus = TimerStatus.RUNNING;
                 break;
             case "break":
                 _timer.Stop();
@@ -223,15 +335,20 @@ class Program
                 _currentTime = _breakTime;
                 _activityName = ActivityName.BREAK;
                 _timer.Start();
+                _timerStatus = TimerStatus.RUNNING;
                 break;
             case "session":
                 _timer.Stop();
+                _timerStatus = TimerStatus.PAUSED;
                 _sessionTime = int.TryParse(firstArg, out var newSessionTime) ?  newSessionTime * 60 : _sessionTime;
                 _currentTime = _sessionTime;
                 _activityName = ActivityName.SESSION;
+                _timer.Start();
+                _timerStatus = TimerStatus.RUNNING;
                 break;
             case "reset":
                 _timer.Stop();
+                _timerStatus = TimerStatus.PAUSED;
                 _currentTime = _activityName == ActivityName.SESSION ? _sessionTime : _breakTime;
                 break;
             case "add":
@@ -242,7 +359,20 @@ class Program
                 }
                 int numberOfSessions = ((secondArg != "") && int.TryParse(secondArg, out  numberOfSessions)) ? numberOfSessions : 1;
                 int timePerSession = (thirdArg != "") && int.TryParse(thirdArg, out  timePerSession) ? timePerSession * 60 : _sessionTime;
-                _pomodoroList.Add(new PomodoroItem() { SessionName = firstArg, NumberOfSessions = numberOfSessions, TimePerSession = timePerSession});;
+                _pomodoroList.Add(new PomodoroItem(firstArg, timePerSession, numberOfSessions));
+                break;
+             case "completed":
+                 _showCompletedSessions = !_showCompletedSessions;
+                 break;
+             case "save":
+                _message = "Saving...";
+                //TODO : GET THE PROJECT NAME FEATURE
+                //TODO : SAVE FILE IN JSON
+                _message = "Saved";
+                break;
+             case "load":
+                 // TODO: LOAD FILE FROM SPECIFIED FOLDER USING GIVEN NAME
+                 // TODO: READ DATA AND UPDATE STATE
                 break;
             default:
                 _message = $"Unknown command: {command}";
@@ -258,13 +388,18 @@ class Program
             ConsoleKeyInfo key = Console.ReadKey(true);
             if ((key.Modifiers & ConsoleModifiers.Control) != 0 && key.Key == ConsoleKey.C)
             {
-                _running = false;   
+                _running = false;
             }
-            
+
+            if (key.Key != ConsoleKey.UpArrow && key.Key != ConsoleKey.DownArrow)
+            {
+                _lastCommandIndex = _commandHistory.Count;
+            }
+
             switch (key.Key)
             {
                 case ConsoleKey.Escape:
-                    _running = false;   
+                    _running = false;
                     break;
                 case ConsoleKey.Enter:
                     ProcessCommand(_command);
@@ -278,12 +413,33 @@ class Program
                     {
                         _command = _command.Substring(0, _command.Length - 1);
                     }
+
                     break;
-                case var k when ( k >= ConsoleKey.A & k <= ConsoleKey.Z):
+                case var k when (k >= ConsoleKey.A & k <= ConsoleKey.Z):
                     _command += key.KeyChar;
                     break;
-                case var k when ( k >= ConsoleKey.D0 & k <= ConsoleKey.D9):
+                case var k when (k >= ConsoleKey.D0 & k <= ConsoleKey.D9):
                     _command += $"{key.KeyChar}";
+                    break;
+                case ConsoleKey.UpArrow:
+                    _lastCommandIndex = _lastCommandIndex == 0 ? _commandHistory.Count - 1 : _lastCommandIndex - 1;
+                    if (_lastCommandIndex < 0)
+                    {
+                        _message = "No previous commands";
+                        _lastCommandIndex = _commandHistory.Count - 1;
+                        break;
+                    }
+                    _command = _commandHistory[_lastCommandIndex].Name;
+                    break;
+                case ConsoleKey.DownArrow:
+                    _lastCommandIndex = _lastCommandIndex >= _commandHistory.Count - 1 ? 0 : _lastCommandIndex + 1;
+                    if (_lastCommandIndex >= _commandHistory.Count)
+                    {
+                        _message = "No previous commands";
+                        _lastCommandIndex = 0;
+                        break;
+                    }
+                    _command = _commandHistory[_lastCommandIndex].Name;
                     break;
                 default:
                     break;

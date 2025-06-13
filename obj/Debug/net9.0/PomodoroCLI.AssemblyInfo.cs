@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PomodoroCLI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ce551d0d280eada8fe8cb726eb448be3d31a25d3")]
 [assembly: System.Reflection.AssemblyProductAttribute("PomodoroCLI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PomodoroCLI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
