@@ -1,12 +1,18 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using System;
+using System.Drawing;
 using Spectre.Console;
 using Timer = System.Timers.Timer;
 using System.Text.Json;
+using H.NotifyIcon;
+using Microsoft.Toolkit.Uwp.Notifications;
 
 class AppConfig
 {
     public string SaveProjectFilePath { get; set; } = "";
+    public int DefaultSessionTime { get; set; } = 25 * 60;
+    public int DefaultBreakTime { get; set; } = 5 * 60;
+    public int DefaultMessageTime { get; set; } = 20;
 }
 class ProjectSpace
 {
@@ -50,7 +56,7 @@ class Program
     {
         SESSION,
         BREAK,
-        POMODORO,
+        
     }
 
     enum TimerStatus
@@ -60,9 +66,6 @@ class Program
         FINISHED,
     }
 
-    const int DefaultSessionTime = 25 * 60;
-    const int DefaultBreakTime = 5 * 60;
-    const int DefaultMessageTime = 20;
     private static AppConfig _appConfig;
     private static int _sessionTime;
     private static int _breakTime;
@@ -75,12 +78,11 @@ class Program
     static string _command = "";
     static List<PomodoroItem> _pomodoroList = new List<PomodoroItem>();
     private static string _message = "";
-    private static int _messageTimeLimit = DefaultMessageTime;
+    private static int _messageTimeLimit;
     private static bool _showCompletedSessions = false;
     private static TimerStatus _timerStatus;
     private static int _lastCommandIndex = _commandHistory.Count;
     private static string _projectName = "";
-    private static string savedProjectPath = "";
 
     static void ClearFromCursorToEnd()
     {
@@ -195,6 +197,7 @@ class Program
 
     static void DrawMessage()
     {
+        //TODO: Add a message Queue instead of message string
         AnsiConsole.MarkupInterpolated($"[bold yellow]MESSAGE:[/] {_message.Trim()}");
         ClearLineRight();
         ClearLineRight();
@@ -211,6 +214,9 @@ class Program
 
     static void RenderUi(string data = "")
     {
+        //TODO: Add a splash page
+        //TODO: Add ASCII art timer
+        //TODO: Better completion art and celebration
         CursorToHome();
         DrawHeader();
         DrawTimer();
@@ -223,13 +229,14 @@ class Program
     {
         _messageTimer = new Timer(1000);
         _messageTimer.AutoReset = true;
+        _messageTimeLimit = _appConfig.DefaultMessageTime;
         _messageTimer.Elapsed += (sender, args) =>
         {
             _messageTimeLimit--;
             if (_messageTimeLimit <= 0)
             {
                 _message = "";
-                _messageTimeLimit = DefaultMessageTime;
+                _messageTimeLimit = _appConfig.DefaultMessageTime;
             }
         };
         _messageTimer.Start();
@@ -258,6 +265,17 @@ class Program
     {
         foreach (var pomodoroItem in _pomodoroList)
         {
+            if (pomodoroItem.Status == PomodoroItem.StatusName.IN_PROGRESS)
+            {
+                if (pomodoroItem.CompletedSessions == pomodoroItem.NumberOfSessions)
+                {
+                    pomodoroItem.Status = PomodoroItem.StatusName.COMPLETED;
+                }
+                else
+                {
+                    pomodoroItem.Status = PomodoroItem.StatusName.PENDING;
+                }
+            }
             if (pomodoroItem.Status == PomodoroItem.StatusName.PENDING)
             {
                 _currentTime = pomodoroItem.TimePerSession;
@@ -270,8 +288,8 @@ class Program
     static void TimerInit(int timerTime, int breakTime)
     {
         _timer = new Timer(1000);
-        _sessionTime = timerTime != 0 ? timerTime : DefaultSessionTime;
-        _breakTime = breakTime != 0 ? breakTime : DefaultBreakTime;
+        _sessionTime = timerTime != 0 ? timerTime : _appConfig.DefaultSessionTime;
+        _breakTime = breakTime != 0 ? breakTime : _appConfig.DefaultBreakTime;
         _currentTime = _sessionTime;
         _timerStatus = TimerStatus.FINISHED;
         _timer.AutoReset = true;
@@ -284,9 +302,19 @@ class Program
                 _timer.Stop();
                 _timerStatus = TimerStatus.FINISHED;
                 _currentTime = 0;
-                //TODO : Better sounds and UI notification
+                //TODO : Better sounds 
                 Console.Beep();
-
+                //TODO: Cross Platform Notification
+                #if WindoWS
+                    Microsoft.Toolkit.Uwp.Notifications.ToastContentBuilder builder = new ToastContentBuilder();
+                    if (_activityName == ActivityName.SESSION){
+                        builder.AddText("Session Finished! Time for a Break!");;
+                    }else if(_activityName == ActivityName.BREAK){
+                        builder.AddText("Break Finished! Time to Work!");
+                    }
+                    builder.Show();
+                #endif
+                
                 // complete Current Session in Queue
                 if (_activityName == ActivityName.SESSION)
                 {
@@ -320,9 +348,9 @@ class Program
 
     static (string, string, string, string) ParseCommand(string command)
     {
-        command = command.ToLower().Trim();
+        command = command.Trim();
         string[] commands = command.Split(' ');
-        string commandName = commands[0];
+        string commandName = commands[0].ToLower();
         string firstArg = commands.Length > 1 ? commands[1] : "";
         string secondArg = commands.Length > 2 ? commands[2] : "";
         string thirdArg = commands.Length > 3 ? commands[3] : "";
@@ -492,6 +520,8 @@ static void ProcessCommand(string command)
                  _message = "Saved";
                  break;
              case "load":
+                 _timer.Stop();
+                 _timerStatus = TimerStatus.PAUSED;
                  path = firstArg;
                  if (path == "")
                  {
@@ -702,6 +732,23 @@ static void ProcessCommand(string command)
                         i = secondIndex;
                     }
                 }
+            }else if (arguments[i] == "-m" || arguments[i] == "--minutes")
+            {
+                int secondIndex = i + 1;
+                if (secondIndex < arguments.Length && int.TryParse(arguments[secondIndex], out timerTime))
+                {
+                    timerTime = timerTime * 60;
+                    i = secondIndex;
+                }
+            }
+            else if (arguments[i] == "-s" || arguments[i] == "--seconds")
+            {
+                int secondIndex = i + 1;
+                if (secondIndex < arguments.Length && int.TryParse(arguments[secondIndex], out timerTime))
+                {
+                    timerTime = timerTime * 1;
+                    i = secondIndex;
+                }
             }
         }
     }
@@ -743,6 +790,8 @@ static void ProcessCommand(string command)
     
     static void Main(string[] argv)
     {
+        //TODO: Stats feature
+        //TODO: SYNC workspace file to track time on road
         int timerTime = 0, breakTime = 0; 
         ConfigInit();
         ParseInput(ref timerTime, ref breakTime);
