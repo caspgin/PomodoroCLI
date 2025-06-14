@@ -2,6 +2,17 @@
 using System;
 using Spectre.Console;
 using Timer = System.Timers.Timer;
+using System.Text.Json;
+
+class AppConfig
+{
+    public string SaveProjectFilePath { get; set; } = "";
+}
+class ProjectSpace
+{
+    public string ProjectName { get; set; }
+    public List<PomodoroItem> Queue { get; set; } = new List<PomodoroItem>();
+}
 
 class PomodoroItem
 {
@@ -48,24 +59,29 @@ class Program
         PAUSED,
         FINISHED,
     }
+
     const int DefaultSessionTime = 25 * 60;
     const int DefaultBreakTime = 5 * 60;
     const int DefaultMessageTime = 20;
+    private static AppConfig _appConfig;
     private static int _sessionTime;
     private static int _breakTime;
     private static ActivityName _activityName;
     private static bool _running = true;
-    private static System.Timers.Timer _timer ;
+    private static System.Timers.Timer _timer;
     private static System.Timers.Timer _messageTimer;
     private static int _currentTime;
-    private static List<Commands> _commandHistory = new List<Commands>() ;
+    private static List<Commands> _commandHistory = new List<Commands>();
     static string _command = "";
     static List<PomodoroItem> _pomodoroList = new List<PomodoroItem>();
     private static string _message = "";
     private static int _messageTimeLimit = DefaultMessageTime;
     private static bool _showCompletedSessions = false;
     private static TimerStatus _timerStatus;
-    private static int _lastCommandIndex = _commandHistory.Count; 
+    private static int _lastCommandIndex = _commandHistory.Count;
+    private static string _projectName = "";
+    private static string savedProjectPath = "";
+
     static void ClearFromCursorToEnd()
     {
         int left = Console.CursorLeft;
@@ -74,7 +90,7 @@ class Program
         int originalTop = top;
         int width = Console.BufferWidth;
         int height = Console.BufferHeight;
-        while (left < width -1  || top < height -1)
+        while (left < width - 1 || top < height - 1)
         {
             Console.Write(' ');
             left = Console.CursorLeft;
@@ -89,9 +105,9 @@ class Program
     {
         int left = Console.CursorLeft;
         int width = Console.BufferWidth;
-        Console.Write(new string(' ', width - left ));
+        Console.Write(new string(' ', width - left));
     }
-   
+
     static void CursorToHome()
     {
         Console.SetCursorPosition(0, 0);
@@ -104,6 +120,11 @@ class Program
         int width = Console.BufferWidth;
         AnsiConsole.Markup($"[bold]Pomodoro CLI[/] : [red3]{_activityName.ToString()}[/]");
         ClearLineRight();
+        if (_projectName != "")
+        {
+            AnsiConsole.Markup($"[bold]Project Name:[/][blue]{_projectName}[/] ");
+            ClearLineRight();
+        }
     }
 
     static void DrawTimer()
@@ -112,7 +133,7 @@ class Program
         int seconds = _currentTime - (minutes * 60);
         Console.Write(@"Time Left :  {0:00}:{1:00}", minutes, seconds);
         ClearLineRight();
-        Console.Write(new string('-', 20));
+        Console.Write(new string('-', Console.BufferWidth - 1));
         ClearLineRight();
     }
 
@@ -121,7 +142,7 @@ class Program
         AnsiConsole.Markup("[bold yellow]Queue:[/]");
         ClearLineRight();
         int i = 1;
-        
+
         foreach (PomodoroItem item in _pomodoroList)
         {
             if (item.Status == PomodoroItem.StatusName.COMPLETED)
@@ -129,7 +150,8 @@ class Program
                 continue;
             }
 
-            AnsiConsole.MarkupInterpolated($@"[bold]{i}.[/] {item.SessionName}        {item.CompletedSessions}/{item.NumberOfSessions} x {item.TimePerSession / 60} min  {item.Status.ToString().ToLower()}");
+            AnsiConsole.MarkupInterpolated(
+                $@"[bold]{i}.[/] {item.SessionName}        {item.CompletedSessions}/{item.NumberOfSessions} x {item.TimePerSession / 60} min  {item.Status.ToString().ToLower()}");
             ClearLineRight();
             i++;
         }
@@ -139,6 +161,7 @@ class Program
             AnsiConsole.Markup("No PENDING sessions in the Queue");
             ClearLineRight();
         }
+
         AnsiConsole.Markup($"[bold yellow]Completed Sessions:[/] [italic]use command 'completed' to see[/]");
         ClearLineRight();
         if (_showCompletedSessions)
@@ -159,7 +182,7 @@ class Program
                     }
 
                     AnsiConsole.MarkupInterpolated(
-                        $@"[bold]{i}.[/] {item.SessionName}        {item.CompletedSessions}/{item.NumberOfSessions} x {item.TimePerSession / 60} min");
+                        $@"[bold]{i}.[/] {item.SessionName}        {item.CompletedSessions}/{item.NumberOfSessions} x {item.TimePerSession / 60.0} min");
                     ClearLineRight();
                     i++;
                 }
@@ -169,6 +192,7 @@ class Program
         ClearLineRight();
         ClearLineRight();
     }
+
     static void DrawMessage()
     {
         AnsiConsole.MarkupInterpolated($"[bold yellow]MESSAGE:[/] {_message.Trim()}");
@@ -176,11 +200,12 @@ class Program
         ClearLineRight();
         ClearLineRight();
     }
-    
-    static void DrawCommands(){
+
+    static void DrawCommands()
+    {
         AnsiConsole.Markup("[bold yellow]Commands:[/]");
         ClearLineRight();
-        
+
         Console.Write(">");
     }
 
@@ -212,7 +237,7 @@ class Program
 
     static void CompleteCurrentInQueue()
     {
-        
+
         foreach (var item in _pomodoroList)
         {
             if (item.Status == PomodoroItem.StatusName.IN_PROGRESS)
@@ -222,10 +247,12 @@ class Program
                 {
                     item.Status = PomodoroItem.StatusName.COMPLETED;
                 }
+
                 break;
             }
         }
     }
+
     //Sets the session as current 
     static void SetNextInQueue()
     {
@@ -239,7 +266,7 @@ class Program
             }
         }
     }
-    
+
     static void TimerInit(int timerTime, int breakTime)
     {
         _timer = new Timer(1000);
@@ -251,7 +278,7 @@ class Program
         _timer.Elapsed += async (sender, args) =>
         {
             _currentTime--;
-            if (_currentTime <  0)
+            if (_currentTime < 0)
             {
                 //stop Timer and Make Notification
                 _timer.Stop();
@@ -259,27 +286,27 @@ class Program
                 _currentTime = 0;
                 //TODO : Better sounds and UI notification
                 Console.Beep();
-                
+
                 // complete Current Session in Queue
                 if (_activityName == ActivityName.SESSION)
                 {
                     CompleteCurrentInQueue();
                 }
-               
+
                 //Change Activity
                 _activityName = _activityName == ActivityName.SESSION ? ActivityName.BREAK : ActivityName.SESSION;
-                
+
                 //Wait for 3 seconds before starting the next session
                 await Task.Delay(3000);
-                
+
 
                 _currentTime = _activityName == ActivityName.SESSION ? _sessionTime : _breakTime;
                 if (_activityName == ActivityName.SESSION)
                 {
                     SetNextInQueue();
                 }
-                 
-                
+
+
                 _timer.Start();
                 _timerStatus = TimerStatus.RUNNING;
             }
@@ -291,14 +318,14 @@ class Program
         }
     }
 
-    static (string,string,string,string) ParseCommand(string command)
+    static (string, string, string, string) ParseCommand(string command)
     {
         command = command.ToLower().Trim();
         string[] commands = command.Split(' ');
         string commandName = commands[0];
-        string firstArg = commands.Length > 1 ?  commands[1] : "";
-        string secondArg = commands.Length > 2 ?  commands[2] : "";
-        string thirdArg = commands.Length > 3 ?  commands[3] : "";
+        string firstArg = commands.Length > 1 ? commands[1] : "";
+        string secondArg = commands.Length > 2 ? commands[2] : "";
+        string thirdArg = commands.Length > 3 ? commands[3] : "";
         return (commandName, firstArg, secondArg, thirdArg);
     }
 
@@ -310,7 +337,29 @@ class Program
         _messageTimer.Dispose();
         // TODO: UPDATE JSON FILE
     }
-    static void ProcessCommand(string command)
+
+    static void SaveQueues(string path)
+    {
+        ProjectSpace p = new ProjectSpace { ProjectName = _projectName, Queue = _pomodoroList }; 
+        string jsonString = JsonSerializer.Serialize(p, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(path, jsonString); 
+    }
+
+    static void LoadQueues(string path)
+    {
+        string json = File.ReadAllText(path);
+        ProjectSpace? newP = JsonSerializer.Deserialize<ProjectSpace>(json, new JsonSerializerOptions { WriteIndented = true });
+        if (newP == null)
+        {
+            _message = "Cannot read File or it is empty";
+            return;
+        }
+        _projectName = newP.ProjectName;
+        _pomodoroList.AddRange(newP.Queue);
+        SetNextInQueue(); 
+    }
+
+static void ProcessCommand(string command)
     {
         var(commandName, firstArg, secondArg, thirdArg) = ParseCommand(command);
         
@@ -364,16 +413,160 @@ class Program
              case "completed":
                  _showCompletedSessions = !_showCompletedSessions;
                  break;
+             case "projectdirectory":
+                _appConfig.SaveProjectFilePath = firstArg;
+                UpdateConfig();
+                _message = "Config Updated!";
+                 break;
              case "save":
-                _message = "Saving...";
-                //TODO : GET THE PROJECT NAME FEATURE
-                //TODO : SAVE FILE IN JSON
-                _message = "Saved";
-                break;
+                 _timer.Stop();
+                 _timerStatus = TimerStatus.PAUSED;
+                 _message = "Saving...";
+                 string path = firstArg;
+                 if (path != "" && Path.IsPathRooted(path))
+                 {
+                     if (File.Exists(path))
+                     {
+                         SaveQueues(path);
+                     }
+                     else
+                     {
+                         if (Path.HasExtension(path) && Path.GetExtension(path) == ".json")
+                         {
+                             File.Create(path).Close();
+                             SaveQueues(path);
+                         }
+                         else
+                         {
+                             _message = "Something is wrong with provided file path.";
+                             break;
+                         }
+                     }
+                 }else if (path != "" && !Path.IsPathRooted(path))
+                 {
+                     if (_appConfig.SaveProjectFilePath == "")
+                     {
+                         _message = "Please set a project directory or provide an absolute path";
+                         break;
+                     }
+
+                     if (!Path.HasExtension(path) || Path.GetExtension(path) != ".json")
+                     {
+                         path = Path.ChangeExtension(path, ".json");
+                     }
+
+                     path = Path.Combine(_appConfig.SaveProjectFilePath, path);
+                     if (!File.Exists(path))
+                     {
+                         File.Create(path).Close();
+                     }
+
+                     SaveQueues(path);
+                 }else if (path == "")
+                 {
+
+
+                     if (_projectName != "" && _appConfig.SaveProjectFilePath != "")
+                     {
+                         path = Path.Combine(_appConfig.SaveProjectFilePath, _projectName + ".json");
+                         SaveQueues(path);
+                     }
+                     else if (_projectName == "" && _appConfig.SaveProjectFilePath != "")
+                     {
+                         path = Path.Combine(_appConfig.SaveProjectFilePath, "default.json");
+                         while (File.Exists(path))
+                         {
+                             path = Path.Combine(_appConfig.SaveProjectFilePath,
+                                 $"default{Path.GetRandomFileName()}.json");
+                         }
+
+                         File.Create(path).Close();
+                         SaveQueues(path);
+                     }
+                     else if (_projectName == "" && _appConfig.SaveProjectFilePath == "")
+                     {
+                         _message = "Please set a project directory or provide an absolute path";
+                         break;
+                     }
+                 }
+                 _message = "Saved";
+                 break;
              case "load":
-                 // TODO: LOAD FILE FROM SPECIFIED FOLDER USING GIVEN NAME
-                 // TODO: READ DATA AND UPDATE STATE
-                break;
+                 path = firstArg;
+                 if (path == "")
+                 {
+                     if (_appConfig.SaveProjectFilePath == "" || _projectName == "")
+                     {
+                         _message = "Please Provide a path";
+                         break;
+                     }
+                     else
+                     {
+                         path = Path.Combine(_appConfig.SaveProjectFilePath, _projectName + ".json");
+                         if (!File.Exists(path))
+                         {
+                             _message = "File not found";
+                             break;
+                         }
+                         _message = "Loading...";
+                        LoadQueues(path);   
+                     }
+                 }
+                 else
+                 {
+                     if (Path.IsPathRooted(path) && Path.HasExtension(path) && Path.GetExtension(path) == ".json")
+                     {
+
+                         if (!File.Exists(path))
+                         {
+                             _message = "File not found";
+                             break;
+                         }
+
+                         _message = "Loading...";
+                         LoadQueues(path);
+                     }
+                     else if (!Path.IsPathRooted(path))
+                     {
+                         if (_appConfig.SaveProjectFilePath == "")
+                         {
+                             _message = "Please set a project directory or provide an absolute path";
+                             break;
+                         }
+
+                         if (!Path.HasExtension(path) || Path.GetExtension(path) != ".json")
+                         {
+                             path = Path.ChangeExtension(path, ".json");
+                         }
+
+                         path = Path.Combine(_appConfig.SaveProjectFilePath, path);
+
+                         if (!File.Exists(path))
+                         {
+                             _message = "File not found or wrong file type";
+                             break;
+                         }
+
+                         _message = "Loading...";
+                         LoadQueues(path);
+
+                     }
+                     else
+                     {
+                         _message = "Invalid Path or File";
+                         break;
+                     }
+                 }
+                 _message = "Loaded!";
+                 break;
+             case "project":
+                if (firstArg == "")
+                {
+                    _message = "Please enter a name for the project";
+                    break;
+                }
+                _projectName = firstArg;
+                 break;
             default:
                 _message = $"Unknown command: {command}";
                 break;
@@ -442,6 +635,7 @@ class Program
                     _command = _commandHistory[_lastCommandIndex].Name;
                     break;
                 default:
+                    _command += key.KeyChar;
                     break;
             }
         }
@@ -459,53 +653,98 @@ class Program
             {
                 timerTime = timerTime * 60;
             }
-            else if (arguments[i] == "-m" || arguments[i] == "--minutes")
+            else if (arguments[i] == "-S" || arguments[i] == "--session")
             {
-                if(i+1 < arguments.Length && int.TryParse(arguments[i+1], out timerTime))
+                int nextIndex = i + 1;
+                int secondIndex = i + 2;
+                if (nextIndex < arguments.Length && int.TryParse(arguments[nextIndex], out timerTime))
                 {
                     timerTime = timerTime * 60;
-                    i++;
-                }
-                else
+                    i = nextIndex;
+                }else if (arguments[nextIndex] == "-m" || arguments[nextIndex] == "--minutes")
                 {
-                    Console.WriteLine("Please enter a valid number of minutes");
-                    _running = false;   
-                    return;
+                    if (secondIndex < arguments.Length && int.TryParse(arguments[secondIndex], out timerTime))
+                    {
+                        timerTime = timerTime * 60;
+                        i = secondIndex;
+                    }
                 }
-            }
-            else if (arguments[i] == "-s" || arguments[i] == "--seconds")
-            {
-                if(i+1 < arguments.Length && int.TryParse(arguments[i+1], out timerTime))
+                else if (arguments[nextIndex] == "-s" || arguments[nextIndex] == "--seconds")
                 {
-                    i++;
-                }
-                else
-                {
-                    Console.WriteLine("Please enter a valid number of seconds");
-                    _running = false;
-                    return;   
+                    if (secondIndex < arguments.Length && int.TryParse(arguments[secondIndex], out timerTime))
+                    {
+                        timerTime = timerTime * 1;
+                        i = secondIndex;
+                    }
                 }
             }  
             else if (arguments[i] == "-b" || arguments[i] == "--break")
             {
-                if(i+1 < arguments.Length && int.TryParse(arguments[i+1], out breakTime))
+                int nextIndex = i + 1;
+                int secondIndex = i + 2;
+                if (nextIndex < arguments.Length && int.TryParse(arguments[nextIndex], out breakTime))
                 {
                     breakTime = breakTime * 60;
-                    i++;
-                }
-                else
+                    i = nextIndex;
+                }else if (arguments[nextIndex] == "-m" || arguments[nextIndex] == "--minutes")
                 {
-                    Console.WriteLine("Please enter a valid number of minutes");
-                    _running = false;   
-                    return;   
+                    if (secondIndex < arguments.Length && int.TryParse(arguments[secondIndex], out breakTime))
+                    {
+                        breakTime = breakTime * 60;
+                        i = secondIndex;
+                    }
+                }
+                else if (arguments[nextIndex] == "-s" || arguments[nextIndex] == "--seconds")
+                {
+                    if (secondIndex < arguments.Length && int.TryParse(arguments[secondIndex], out breakTime))
+                    {
+                        breakTime = breakTime * 1;
+                        i = secondIndex;
+                    }
                 }
             }
         }
     }
+
+    static string GetConfigFilePath()
+    {
+        string appName = "PomodoroCLI";
+        string configDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), appName);
+        Directory.CreateDirectory(configDir);
+        return Path.Combine(configDir, "config.json");
+    }
+    static void UpdateConfig()
+    {
+        string configPath = GetConfigFilePath();
+        string json = JsonSerializer.Serialize(_appConfig, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(configPath, json);
+    }
+    
+    static void ConfigInit()
+    {
+        string configPath = GetConfigFilePath();
+        if (!File.Exists(configPath))
+        {
+            File.Create(configPath).Close();
+            _appConfig = new AppConfig();
+            string outText = JsonSerializer.Serialize(_appConfig, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(configPath, outText);
+        }
+
+        string json = File.ReadAllText(configPath);
+            AppConfig? conf = JsonSerializer.Deserialize<AppConfig>(json, new JsonSerializerOptions { WriteIndented = true });
+            if (conf != null)
+            {
+                _appConfig = conf; 
+            }
+        
+        
+    }
     
     static void Main(string[] argv)
     {
-        int timerTime = 0, breakTime = 0;
+        int timerTime = 0, breakTime = 0; 
+        ConfigInit();
         ParseInput(ref timerTime, ref breakTime);
         TimerInit(timerTime,breakTime);
         MessageTimerInit();        
