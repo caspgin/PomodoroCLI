@@ -39,6 +39,13 @@
 - `load`:  Loads the queues from the JSON file
 ---
 
+### Build
+- use command : `dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true`
+- copy the executable to a folder included in path.
+- Use in terminal
+- Currently working only on windows
+
+---
 ### 🛠️ Planned Features & Bugs
 
 #### Features to Add
