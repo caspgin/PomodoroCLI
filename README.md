@@ -1,21 +1,61 @@
-# A CLI Pomodoro timer made using dotnet.
+# POMODORO CLI APP
+##### A CLI Pomodoro timer made using dotnet.
+---
 
-## **Why make it?**
-1. To learn dotnet and c#
-2. To make a productivity tool that tracks how much time I actually spend being productive
-3. To track how much time it takes for me to finish a project.
+## 📖 Purpose
 
-## Features
-1. Start the timer using either minutes or seconds in the command. eg. "dotnet run -m 5" or "dotnet run -s 10"
-2. Queue for upcoming sessions and their time
-3. key processing like for entering commands, cycling through used commands from the command history and more
-4. Message system for feedback if an error happens.
-5. Commands system: Use commands like "quit" or "add" to control timer. Following is the list of Commands
-    1. add: Adds a session in the queue with time for session and number of sessions e.g. "add testingSession 2 10" adds 2 sessions name testingSession of 10 minutes each
-    2. Start: Starts the paused or next session
-    3. Stop: Pauses a session or break
-    4. break: Sets the break amount and starts it immediately
-    5. session: Start a session of given time or default time immedaiately
-    6. completed: See the completed ssessions
+- **Why make it?**
+  - To learn dotnet and C#
+  - To make a productivity tool that tracks how much time I actually spend being productive
+  - To track how much time it takes for me to finish a project
 
-   
+---
+
+## 🚀 Features
+
+### ✅ Completed Features
+
+- **Config support:**  
+  Save and load user preferences (session time, break time, project directory, etc.) in a config file.
+- **Save and load queues:**  
+  Persist your Pomodoro session queue to a file and reload it later.
+- **Start the timer** using either minutes or seconds in the command.  
+  _Example:_ `dotnet run -m 5` or `dotnet run -s 10`
+- **Queue** for upcoming sessions and their time
+- **Key processing** for entering commands, cycling through used commands from the command history, and more
+- **Message system** for feedback if an error happens
+- **Commands system:** Use commands like `quit` or `add` to control the timer
+
+#### Command List
+
+- `add`: Adds a session in the queue with time for session and number of sessions  
+  _e.g._ `add testingSession 2 10` adds 2 sessions named `testingSession` of 10 minutes each
+- `start`: Starts the paused or next session
+- `stop`: Pauses a session or break
+- `break`: Sets the break amount and starts it immediately
+- `session`: Start a session of given time or default time immediately
+- `completed`: See the completed sessions
+- `save`: Saves the queues to JSON file
+- `load`:  Loads the queues from the JSON file
+---
+
+### 🛠️ Planned Features & Bugs
+
+#### Features to Add
+
+- [ ] Add a splash page
+- [ ] Add ASCII art timer
+- [ ] Better completion art and celebration
+- [ ] Add a message queue instead of a single message string
+- [ ] Better sounds (cross-platform, custom audio)
+- [ ] Cross-platform notification support
+- [ ] Stats feature (track total Pomodoros, time spent, streaks, etc.)
+- [ ] SYNC workspace file to track time on the road
+- [ ] Auto-update JSON file on quit
+
+#### Bugs to Eliminate
+
+- [ ] **Unlimited scrolling when UI resizes and there is no handling of that**  
+       _Detect window size changes and re-render or clear the UI accordingly._
+
+---
